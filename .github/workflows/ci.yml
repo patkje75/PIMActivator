@@ -1,0 +1,129 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  lint-and-test:
+    name: Lint and Test (PowerShell 7+)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # -----------------------------------------------------------------------
+      # PSScriptAnalyzer
+      # -----------------------------------------------------------------------
+      - name: Install PSScriptAnalyzer
+        shell: pwsh
+        run: |
+          Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+          Install-Module -Name PSScriptAnalyzer -Scope CurrentUser -Force -ErrorAction Stop
+          Write-Output "PSScriptAnalyzer version: $((Get-Module PSScriptAnalyzer -ListAvailable | Select-Object -First 1).Version)"
+
+      - name: Run PSScriptAnalyzer
+        shell: pwsh
+        run: |
+          $results = Invoke-ScriptAnalyzer `
+              -Path ./PIMActivator `
+              -Settings ./PSScriptAnalyzerSettings.psd1 `
+              -Recurse `
+              -ErrorAction Stop
+
+          if ($results) {
+              $results | Format-Table -AutoSize
+              Write-Error "PSScriptAnalyzer found $($results.Count) issue(s). See output above."
+              exit 1
+          }
+          else {
+              Write-Output "PSScriptAnalyzer: no issues found."
+          }
+
+      # -----------------------------------------------------------------------
+      # Module manifest validation
+      # RequiredModules (Microsoft.Graph.Authentication, PwshSpectreConsole) are
+      # not installed in CI, so we validate the manifest structure with
+      # -ErrorAction SilentlyContinue and confirm the key fields manually.
+      # -----------------------------------------------------------------------
+      - name: Validate module manifest structure
+        shell: pwsh
+        run: |
+          $manifestPath = './PIMActivator/PIMActivator.psd1'
+
+          # Test-ModuleManifest will warn about missing RequiredModules in CI;
+          # suppress those terminating errors but still validate the structure.
+          $manifest = Test-ModuleManifest -Path $manifestPath -ErrorAction SilentlyContinue
+
+          $failed = $false
+
+          if (-not $manifest) {
+              Write-Error "Test-ModuleManifest could not parse the manifest at '$manifestPath'."
+              $failed = $true
+          }
+          else {
+              # Validate key fields that must always be present and correct.
+              $checks = @(
+                  @{ Field = 'ModuleVersion';     Expected = '1.0.0';               Actual = $manifest.Version.ToString() },
+                  @{ Field = 'Author';            Expected = 'PIMActivator Contributors';   Actual = $manifest.Author },
+                  @{ Field = 'RootModule';        Expected = 'PIMActivator.psm1';   Actual = $manifest.RootModule },
+                  @{ Field = 'PowerShellVersion'; Expected = '7.0';                 Actual = $manifest.PowerShellVersion.ToString() }
+              )
+
+              foreach ($check in $checks) {
+                  if ($check.Actual -ne $check.Expected) {
+                      Write-Error "Manifest field '$($check.Field)': expected '$($check.Expected)', got '$($check.Actual)'."
+                      $failed = $true
+                  }
+              }
+
+              # Confirm the public export list is as expected.
+              if ($manifest.ExportedFunctions.Keys -notcontains 'Invoke-PIMActivation') {
+                  Write-Error "FunctionsToExport must contain 'Invoke-PIMActivation'."
+                  $failed = $true
+              }
+
+              if ($manifest.CompatiblePSEditions -notcontains 'Core') {
+                  Write-Error "CompatiblePSEditions must contain 'Core'."
+                  $failed = $true
+              }
+          }
+
+          if ($failed) { exit 1 }
+          Write-Output "Module manifest validation passed."
+
+      # -----------------------------------------------------------------------
+      # Pester unit tests
+      # -----------------------------------------------------------------------
+      - name: Install Pester 5.x
+        shell: pwsh
+        run: |
+          Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+          Install-Module -Name Pester -MinimumVersion 5.0.0 -MaximumVersion 5.99.99 `
+              -Scope CurrentUser -Force -SkipPublisherCheck -ErrorAction Stop
+          Write-Output "Pester version: $((Get-Module Pester -ListAvailable | Select-Object -First 1).Version)"
+
+      - name: Run Pester unit tests
+        shell: pwsh
+        run: |
+          $pesterConfig = New-PesterConfiguration
+          $pesterConfig.Run.Path         = './Tests/Unit'
+          $pesterConfig.Run.Exit         = $true
+          $pesterConfig.Output.Verbosity = 'Detailed'
+          $pesterConfig.TestResult.Enabled    = $true
+          $pesterConfig.TestResult.OutputPath = 'TestResults.xml'
+          $pesterConfig.TestResult.OutputFormat = 'NUnitXml'
+
+          Invoke-Pester -Configuration $pesterConfig
+
+      - name: Publish test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pester-test-results
+          path: TestResults.xml
