@@ -78,7 +78,26 @@ Describe 'Get-PIMGroupRoleDefault' {
         }
     }
 
-    Context 'Rule 5: landing-zone default -> 8 hours' {
+    Context 'Rule 5: production subscription -> 4 hours' {
+
+        It 'azr-pag-sub-integrations-01-p-contributor -> 4' {
+            Get-PIMGroupRoleDefault -GroupName 'azr-pag-sub-integrations-01-p-contributor' | Should -Be 4
+        }
+
+        It 'azr-pag-sub-integrations-01-p-developer -> 4' {
+            Get-PIMGroupRoleDefault -GroupName 'azr-pag-sub-integrations-01-p-developer' | Should -Be 4
+        }
+
+        It 'azr-pag-sub-integrations-01-p-secretsofficer -> 4' {
+            Get-PIMGroupRoleDefault -GroupName 'azr-pag-sub-integrations-01-p-secretsofficer' | Should -Be 4
+        }
+
+        It 'azr-pag-sub-other-02-p-reader -> 4' {
+            Get-PIMGroupRoleDefault -GroupName 'azr-pag-sub-other-02-p-reader' | Should -Be 4
+        }
+    }
+
+    Context 'Rule 6: landing-zone default -> 8 hours' {
 
         It 'azr-pag-sub-analytics-contributor -> 8' {
             Get-PIMGroupRoleDefault -GroupName 'azr-pag-sub-analytics-contributor' | Should -Be 8

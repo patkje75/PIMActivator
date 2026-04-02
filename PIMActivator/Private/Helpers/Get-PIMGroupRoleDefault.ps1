@@ -25,13 +25,17 @@ function Get-PIMGroupRoleDefault {
             Rule 4  platform contributor/reader               -->  4 hours
                     Matches $script:PIMPlatformPatterns via Test-PIMPlatformScope.
 
-            Rule 5  default (landing zone contributor/reader) -->  8 hours
+            Rule 5  production subscription ('*-p-*')         -->  4 hours
+                    Production subscriptions with stricter policy limits.
+
+            Rule 6  default (landing zone contributor/reader) -->  8 hours
 
         Naming convention examples:
-            'azr-pag-mg-root-owner'               -> 1h  (root + owner)
-            'azr-pag-mg-root-contributor'         -> 2h  (root only)
-            'azr-pag-mg-connectivity-owner'       -> 4h  (owner; platform scope)
-            'azr-pag-sub-analytics-contributor'   -> 8h  (landing zone default)
+            'azr-pag-mg-root-owner'                       -> 1h  (root + owner)
+            'azr-pag-mg-root-contributor'                 -> 2h  (root only)
+            'azr-pag-mg-connectivity-owner'               -> 4h  (owner; platform scope)
+            'azr-pag-sub-integrations-01-p-contributor'   -> 4h  (production)
+            'azr-pag-sub-analytics-contributor'           -> 8h  (landing zone default)
 
     .PARAMETER GroupName
         The display name of the PIM group.
@@ -77,7 +81,13 @@ function Get-PIMGroupRoleDefault {
         return 4
     }
 
-    # Rule 5: landing zone default
+    # Rule 5: production subscription (name contains '-p-' segment)
+    if ($GroupName -like '*-p-*') {
+        Write-Verbose "[PIMActivator] Get-PIMGroupRoleDefault: '$GroupName' matched production rule -> 4h"
+        return 4
+    }
+
+    # Rule 6: landing zone default
     Write-Verbose "[PIMActivator] Get-PIMGroupRoleDefault: '$GroupName' matched default rule -> 8h"
     return 8
 }
